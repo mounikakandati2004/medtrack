@@ -1,36 +1,26 @@
 from flask import Flask, render_template, request, redirect, url_for, session
-from werkzeug.utils import secure_filename
 import boto3
 import os
 import uuid
 
 # App setup
-app = Flask(__name__)
+app = Flask(_name_)
 app.secret_key = 'secret_key_here'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# AWS Config
-REGION = 'us-east-1'
-dynamodb = boto3.resource('dynamodb', region_name=REGION)
-sns = boto3.client('sns', region_name=REGION)
-
-SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:615299730511:medtrack"  # ✅ Ensure this ARN is correct
-
-# DynamoDB Tables
+# AWS DynamoDB connection
+dynamodb = boto3.resource('dynamodb', region_name='ap-south-1')
 users_table = dynamodb.Table('Users')
 appointments_table = dynamodb.Table('Appointments')
 reports_table = dynamodb.Table('Reports')
-
-# Ensure upload directory exists
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ---------------- ROUTES ---------------- #
 
 @app.route('/')
 def index():
-    print("✅ MedTrack is running!")
+    print("✅ MedTrack is running!")  # add this line
     return render_template('index.html')
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -52,11 +42,11 @@ def login():
         email = request.form['email']
         role = request.form['role']
         user = users_table.get_item(Key={'email': email}).get('Item')
-        if user and user['role'] == role and user['password'] == request.form['password']:
+        if user and user['role'] == role:
             session['user'] = email
             session['role'] = role
             return redirect(url_for('dashboard'))
-        return "Invalid login credentials"
+        return "Invalid login"
     return render_template('login.html')
 
 @app.route('/dashboard')
@@ -67,72 +57,42 @@ def dashboard():
 
 @app.route('/book-appointment', methods=['GET', 'POST'])
 def book_appointment():
-    if 'user' not in session:
-        return redirect(url_for('login'))
-
     if request.method == 'POST':
-        appointment_data = {
-            'appointment_id': str(uuid.uuid4()),
-            'patient_email': session['user'],
-            'doctor': request.form['doctor'],
-            'date': request.form['date'],
-            'time': request.form['time']
-        }
-        appointments_table.put_item(Item=appointment_data)
-
-        # Send SNS Notification
-        try:
-            sns.publish(
-                TopicArn=SNS_TOPIC_ARN,
-                Subject='New Appointment Booked',
-                Message=f"""
-                Patient: {appointment_data['patient_email']}
-                Doctor: {appointment_data['doctor']}
-                Date: {appointment_data['date']}
-                Time: {appointment_data['time']}
-                """
-            )
-        except Exception as e:
-            print("❌ SNS Error:", e)
-
+        appointments_table.put_item(
+            Item={
+                'appointment_id': str(uuid.uuid4()),
+                'patient_email': session['user'],
+                'doctor': request.form['doctor'],
+                'date': request.form['date'],
+                'time': request.form['time']
+            }
+        )
         return redirect(url_for('dashboard'))
-
     return render_template('book-appointment.html')
 
 @app.route('/submit-diagnosis', methods=['GET', 'POST'])
 def submit_diagnosis():
-    if 'user' not in session:
-        return redirect(url_for('login'))
-
     if request.method == 'POST':
         file = request.files['report_file']
-        if file:
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+        filename = file.filename
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-            reports_table.put_item(
-                Item={
-                    'report_id': str(uuid.uuid4()),
-                    'patient_email': request.form['patient_name'],
-                    'doctor_name': request.form['doctor_name'],
-                    'summary': request.form['summary'],
-                    'filename': filename
-                }
-            )
+        reports_table.put_item(
+            Item={
+                'report_id': str(uuid.uuid4()),
+                'patient_email': request.form['patient_name'],
+                'doctor_name': request.form['doctor_name'],
+                'summary': request.form['summary'],
+                'filename': filename
+            }
+        )
         return redirect(url_for('dashboard'))
-
     return render_template('submit-diagnosis.html')
 
 @app.route('/medical-history')
 def medical_history():
-    if 'user' not in session:
-        return redirect(url_for('login'))
-
-    user_email = session['user']
     reports = reports_table.scan().get('Items', [])
-    user_reports = [r for r in reports if r['patient_email'] == user_email]
-    return render_template('medical-history.html', reports=user_reports)
+    return render_template('medical-history.html', reports=reports)
 
 @app.route('/logout')
 def logout():
@@ -140,5 +100,7 @@ def logout():
     return redirect(url_for('login'))
 
 # ---------------- RUN SERVER ---------------- #
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if _name_ == '_main_':
+    if not os.path.exists('uploads'):
+        os.makedirs('uploads')
+    app.run(debug=True)
