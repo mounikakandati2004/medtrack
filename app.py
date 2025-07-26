@@ -5,7 +5,7 @@ import os
 import uuid
 
 # App setup
-app = Flask(name)
+app = Flask(__name__)
 app.secret_key = 'secret_key_here'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
