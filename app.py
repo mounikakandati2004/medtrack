@@ -14,12 +14,16 @@ REGION = 'us-east-1'
 dynamodb = boto3.resource('dynamodb', region_name=REGION)
 sns = boto3.client('sns', region_name=REGION)
 
-SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:615299730511:medtrack"  # 🔁 Replace this
+SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:615299730511:medtrack"  # ✅ Ensure this ARN is correct
 
 # DynamoDB Tables
 users_table = dynamodb.Table('Users')
 appointments_table = dynamodb.Table('Appointments')
 reports_table = dynamodb.Table('Reports')
+
+# Ensure upload directory exists
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ---------------- ROUTES ---------------- #
 
@@ -27,7 +31,6 @@ reports_table = dynamodb.Table('Reports')
 def index():
     print("✅ MedTrack is running!")
     return render_template('index.html')
-
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -43,7 +46,6 @@ def register():
         return redirect(url_for('login'))
     return render_template('register.html')
 
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -57,13 +59,11 @@ def login():
         return "Invalid login credentials"
     return render_template('login.html')
 
-
 @app.route('/dashboard')
 def dashboard():
     if 'user' not in session:
         return redirect(url_for('login'))
     return render_template('dashboard.html')
-
 
 @app.route('/book-appointment', methods=['GET', 'POST'])
 def book_appointment():
@@ -80,7 +80,7 @@ def book_appointment():
         }
         appointments_table.put_item(Item=appointment_data)
 
-        # ✅ Send SNS Notification
+        # Send SNS Notification
         try:
             sns.publish(
                 TopicArn=SNS_TOPIC_ARN,
@@ -99,7 +99,6 @@ def book_appointment():
 
     return render_template('book-appointment.html')
 
-
 @app.route('/submit-diagnosis', methods=['GET', 'POST'])
 def submit_diagnosis():
     if 'user' not in session:
@@ -107,23 +106,23 @@ def submit_diagnosis():
 
     if request.method == 'POST':
         file = request.files['report_file']
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+        if file:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
 
-        reports_table.put_item(
-            Item={
-                'report_id': str(uuid.uuid4()),
-                'patient_email': request.form['patient_name'],
-                'doctor_name': request.form['doctor_name'],
-                'summary': request.form['summary'],
-                'filename': filename
-            }
-        )
+            reports_table.put_item(
+                Item={
+                    'report_id': str(uuid.uuid4()),
+                    'patient_email': request.form['patient_name'],
+                    'doctor_name': request.form['doctor_name'],
+                    'summary': request.form['summary'],
+                    'filename': filename
+                }
+            )
         return redirect(url_for('dashboard'))
 
     return render_template('submit-diagnosis.html')
-
 
 @app.route('/medical-history')
 def medical_history():
@@ -135,12 +134,10 @@ def medical_history():
     user_reports = [r for r in reports if r['patient_email'] == user_email]
     return render_template('medical-history.html', reports=user_reports)
 
-
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
-
 
 # ---------------- RUN SERVER ---------------- #
 if __name__ == '__main__':
